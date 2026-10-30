@@ -598,7 +598,7 @@ def render_main(tado):
             label_visibility="collapsed",
         )
         term_map = {
-            "Until next block": "NEXT_TIME_BLOCK",
+            "Until next block": "AUTO",
             "1 hour": 3600,
             "2 hours": 7200,
             "Manual": "MANUAL",
