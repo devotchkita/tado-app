@@ -168,8 +168,8 @@ def render_auth_page():
             if st.button("Start Login", type="primary"):
                 from libtado.api import Tado
 
+                # Tado() with no token automatically starts the device code flow
                 t = Tado()
-                t.login_device_flow()
                 st.session_state.auth_tado = t
                 st.session_state.auth_url = t.get_device_verification_url()
                 st.session_state.auth_flow_started = True
