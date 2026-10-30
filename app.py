@@ -11,9 +11,199 @@ from pathlib import Path
 st.set_page_config(
     page_title="Tado Control",
     page_icon="🌡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
+
+# ---------------------------------------------------------------------------
+# Custom CSS – match the artifact's design language
+# ---------------------------------------------------------------------------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+/* Hide Streamlit chrome */
+#MainMenu, header, footer { visibility: hidden; }
+.block-container { padding-top: 1rem; max-width: 520px; }
+
+/* Override Streamlit font */
+html, body, [class*="css"] {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+}
+
+/* Room card grid */
+.room-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.room-card {
+    background: var(--secondary-background-color, #F5F5F5);
+    border: 1.5px solid rgba(128,128,128,0.15);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.room-card.heating {
+    border-color: #E8553A;
+    border-left: 4px solid #E8553A;
+}
+
+.room-card.off {
+    opacity: 0.5;
+}
+
+.room-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.room-icon {
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(128,128,128,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.room-name {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.room-status {
+    font-size: 11px;
+    color: #6B6B6B;
+    margin-top: 1px;
+}
+
+.room-right {
+    text-align: right;
+}
+
+.room-temp {
+    font-size: 20px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+}
+
+.room-target {
+    font-size: 11px;
+    color: #6B6B6B;
+}
+
+/* Global thermostat display */
+.global-display {
+    text-align: center;
+    padding: 24px 0 16px;
+}
+
+.global-temp {
+    font-size: 56px;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: -2px;
+    line-height: 1;
+}
+
+.global-temp .unit {
+    font-size: 22px;
+    font-weight: 400;
+    color: #6B6B6B;
+    vertical-align: super;
+}
+
+.global-label {
+    font-size: 13px;
+    color: #6B6B6B;
+    margin-top: 6px;
+}
+
+/* Stat row */
+.stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.stat-card {
+    background: var(--secondary-background-color, #F5F5F5);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+}
+
+.stat-label {
+    font-size: 11px;
+    color: #6B6B6B;
+    margin-top: 2px;
+}
+
+/* Section headers */
+.section-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6B6B6B;
+    margin: 20px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Battery badges */
+.battery-low {
+    display: inline-block;
+    background: #FEF2F0;
+    color: #E8553A;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Profile card */
+.profile-card {
+    background: var(--secondary-background-color, #F5F5F5);
+    border: 1.5px solid rgba(128,128,128,0.15);
+    border-radius: 10px;
+    padding: 14px;
+    margin: 6px 0;
+}
+
+.profile-name {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.profile-meta {
+    font-size: 11px;
+    color: #6B6B6B;
+    margin-top: 2px;
+}
+
+/* Override streamlit button styling */
+.stButton > button {
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -23,17 +213,13 @@ PROFILES_DIR.mkdir(exist_ok=True)
 TOKEN_FILE = Path(__file__).parent / ".tado_token.json"
 
 # ---------------------------------------------------------------------------
-# Helpers – token persistence
+# Auth helpers
 # ---------------------------------------------------------------------------
-# On Streamlit Cloud the filesystem resets between deploys, so we also
-# let the user paste a refresh token from st.secrets or manually.
 
 
 def _get_tado_client():
-    """Return an authenticated Tado client or None."""
     from libtado.api import Tado
 
-    # 1. Already authenticated this session
     if "tado" in st.session_state and st.session_state.tado is not None:
         try:
             st.session_state.tado.refresh_auth()
@@ -41,7 +227,6 @@ def _get_tado_client():
         except Exception:
             st.session_state.tado = None
 
-    # 2. Try saved refresh token (from secrets or file)
     refresh_token = None
     try:
         refresh_token = st.secrets["TADO_REFRESH_TOKEN"]
@@ -66,7 +251,6 @@ def _get_tado_client():
 
 
 def _persist_token(tado_client):
-    """Save refresh token to disk so it survives app restarts (locally)."""
     try:
         token_data = {
             "refresh_token": tado_client.refresh_token,
@@ -78,12 +262,11 @@ def _persist_token(tado_client):
 
 
 # ---------------------------------------------------------------------------
-# Helpers – profiles
+# Profile helpers
 # ---------------------------------------------------------------------------
 
 
 def load_profiles() -> dict:
-    """Load all saved seasonal profiles from disk."""
     profiles = {}
     for f in PROFILES_DIR.glob("*.json"):
         profiles[f.stem] = json.loads(f.read_text())
@@ -91,7 +274,6 @@ def load_profiles() -> dict:
 
 
 def save_profile(name: str, data: dict):
-    """Save a seasonal profile to disk."""
     filepath = PROFILES_DIR / f"{name}.json"
     filepath.write_text(json.dumps(data, indent=2))
 
@@ -103,10 +285,8 @@ def delete_profile(name: str):
 
 
 def export_current_schedules(tado) -> dict:
-    """Read every zone's current schedule and return as a profile dict."""
     zones = tado.get_zones()
     profile = {"exported_at": datetime.now().isoformat(), "zones": {}}
-
     for zone in zones:
         zid = zone["id"]
         zname = zone["name"]
@@ -121,12 +301,10 @@ def export_current_schedules(tado) -> dict:
             }
         except Exception as e:
             profile["zones"][str(zid)] = {"name": zname, "error": str(e)}
-
     return profile
 
 
 def apply_profile(tado, profile: dict):
-    """Push a saved profile's schedules to all zones."""
     results = []
     for zid_str, zone_data in profile.get("zones", {}).items():
         zid = int(zid_str)
@@ -145,30 +323,77 @@ def apply_profile(tado, profile: dict):
 
 
 # ---------------------------------------------------------------------------
+# Data fetching (cached briefly)
+# ---------------------------------------------------------------------------
+
+
+def fetch_all_data(tado):
+    """Fetch all zone data in one go. Returns dict."""
+    try:
+        zones = tado.get_zones()
+        zone_states = tado.get_zone_states()
+        devices = tado.get_devices()
+        weather = tado.get_weather()
+        home_state = tado.get_home_state()
+        return {
+            "zones": zones,
+            "zone_states": zone_states.get("zoneStates", zone_states),
+            "devices": devices,
+            "weather": weather,
+            "home_state": home_state,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Room icon mapping
+# ---------------------------------------------------------------------------
+ROOM_ICONS = {
+    "living": "🛋", "lounge": "🛋", "sitting": "🛋",
+    "bedroom": "🛏", "bed": "🛏", "master": "🛏", "guest": "🛏",
+    "kitchen": "🍳", "dining": "🍽",
+    "office": "💻", "study": "💻", "work": "💻",
+    "bathroom": "🚿", "bath": "🚿", "shower": "🚿", "ensuite": "🚿",
+    "hallway": "🚪", "hall": "🚪", "landing": "🚪", "corridor": "🚪",
+    "nursery": "🧸", "playroom": "🧸", "kid": "🧸", "child": "🧸",
+    "garage": "🔧", "utility": "🔧", "laundry": "🧺",
+}
+
+
+def get_room_icon(name):
+    name_lower = name.lower()
+    for key, icon in ROOM_ICONS.items():
+        if key in name_lower:
+            return icon
+    return "🌡"
+
+
+# ---------------------------------------------------------------------------
 # Auth page
 # ---------------------------------------------------------------------------
 
 
 def render_auth_page():
-    st.title("🌡️ Tado Control")
+    st.markdown('<div class="global-display"><div class="global-temp">🌡️</div>'
+                '<div class="global-label">Tado Control</div></div>',
+                unsafe_allow_html=True)
     st.markdown("Connect to your Tado account to get started.")
 
     tab_device, tab_token = st.tabs(["Device Login", "Paste Refresh Token"])
 
     with tab_device:
         st.markdown(
-            "This uses Tado's OAuth2 device code flow. "
-            "You'll get a URL to open in your browser to authorise."
+            "Uses Tado's OAuth2 device code flow. "
+            "You'll get a URL and code to enter in your browser."
         )
 
         if "auth_flow_started" not in st.session_state:
             st.session_state.auth_flow_started = False
 
         if not st.session_state.auth_flow_started:
-            if st.button("Start Login", type="primary"):
+            if st.button("Start Login", type="primary", use_container_width=True):
                 from libtado.api import Tado
-
-                # Tado() with no token automatically starts the device code flow
                 t = Tado()
                 st.session_state.auth_tado = t
                 st.session_state.auth_url = t.get_device_verification_url()
@@ -179,44 +404,40 @@ def render_auth_page():
             url = st.session_state.get("auth_url", "")
             user_code = st.session_state.get("auth_user_code", "")
 
-            st.info(f"**1.** Open this URL in your browser:\n\n{url}")
+            st.info(f"**1.** Open this URL:\n\n{url}")
             if user_code:
-                st.success(f"**2.** Enter this code when prompted: **{user_code}**")
-            st.markdown("**3.** Log in with your Tado credentials, then click the button below.")
+                st.success(f"**2.** Enter this code: **{user_code}**")
+            st.markdown("**3.** Log in, then click below.")
 
-            if st.button("I've logged in, check now"):
-                t = st.session_state.auth_tado
-                try:
-                    activated = t.check_device_activation()
-                    if activated:
-                        t.device_ready()
-                        st.session_state.tado = t
-                        _persist_token(t)
-                        st.session_state.auth_flow_started = False
-                        st.success("Connected!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.warning(
-                            "Not yet authorised. Open the URL above and try again."
-                        )
-                except Exception as e:
-                    st.error(f"Auth check failed: {e}")
-
-            if st.button("Cancel"):
-                st.session_state.auth_flow_started = False
-                st.rerun()
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("I've logged in ✓", type="primary", use_container_width=True):
+                    t = st.session_state.auth_tado
+                    try:
+                        activated = t.check_device_activation()
+                        if activated:
+                            t.device_ready()
+                            st.session_state.tado = t
+                            _persist_token(t)
+                            st.session_state.auth_flow_started = False
+                            st.success("Connected!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Not yet authorised. Try again.")
+                    except Exception as e:
+                        st.error(f"Auth check failed: {e}")
+            with c2:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state.auth_flow_started = False
+                    st.rerun()
 
     with tab_token:
-        st.markdown(
-            "If you already have a refresh token (e.g. from a previous session), "
-            "paste it here."
-        )
+        st.markdown("Paste a refresh token from a previous session.")
         token = st.text_input("Refresh token", type="password")
-        if st.button("Connect with token"):
+        if st.button("Connect", use_container_width=True):
             if token.strip():
                 from libtado.api import Tado
-
                 try:
                     t = Tado(saved_refresh_token=token.strip())
                     status = t.get_device_activation_status()
@@ -228,399 +449,360 @@ def render_auth_page():
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error("Token invalid or expired. Use device login instead.")
+                        st.error("Token invalid or expired.")
                 except Exception as e:
                     st.error(f"Failed: {e}")
 
 
 # ---------------------------------------------------------------------------
-# Dashboard page
+# Main dashboard
 # ---------------------------------------------------------------------------
 
 
-def render_dashboard(tado):
-    st.title("🌡️ Dashboard")
+def render_main(tado):
+    data = fetch_all_data(tado)
 
-    try:
-        zones = tado.get_zones()
-        zone_states = tado.get_zone_states()
-        devices = tado.get_devices()
-        weather = tado.get_weather()
-        home_state = tado.get_home_state()
-    except Exception as e:
-        st.error(f"Failed to fetch data: {e}")
+    if "error" in data:
+        st.error(f"Failed to fetch data: {data['error']}")
         if st.button("Re-authenticate"):
             st.session_state.tado = None
             st.rerun()
         return
 
-    # Home status bar
-    presence = home_state.get("presence", "UNKNOWN")
-    outside_temp = weather.get("outsideTemperature", {}).get("celsius", "?")
-    solar = weather.get("solarIntensity", {}).get("percentage", "?")
-
-    col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Home", presence.title())
-    col_b.metric("Outside", f"{outside_temp}°C")
-    col_c.metric("Solar Intensity", f"{solar}%")
-
-    st.divider()
-
-    # Build device lookup for battery info
-    device_battery = {}
-    for d in devices:
-        serial = d.get("serialNo", "")
-        battery = d.get("batteryState", "UNKNOWN")
-        device_battery[serial] = battery
-
-    # Zone cards
-    zone_state_map = zone_states.get("zoneStates", zone_states)
-
-    cols_per_row = 3
-    zone_list = sorted(zones, key=lambda z: z["id"])
-
-    for i in range(0, len(zone_list), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx >= len(zone_list):
-                break
-
-            zone = zone_list[idx]
-            zid = zone["id"]
-            zname = zone["name"]
-            state = zone_state_map.get(str(zid), {})
-
-            with col:
-                with st.container(border=True):
-                    # Current temp
-                    sensor = state.get("sensorDataPoints", {})
-                    temp = sensor.get("insideTemperature", {}).get("celsius", "?")
-                    humidity = sensor.get("humidity", {}).get("percentage", "?")
-
-                    # Target temp
-                    setting = state.get("setting", {})
-                    target = setting.get("temperature", {})
-                    target_temp = target.get("celsius", "off") if target else "off"
-                    power = setting.get("power", "OFF")
-
-                    # Heating power percentage
-                    activity = state.get("activityDataPoints", {})
-                    heating_pct = activity.get("heatingPower", {}).get(
-                        "percentage", 0
-                    )
-
-                    # Overlay (manual override)?
-                    overlay = state.get("overlay")
-                    is_manual = overlay is not None
-
-                    # Zone devices for battery
-                    zone_devices = [
-                        d
-                        for d in devices
-                        if d.get("currentFwVersion")
-                        and any(
-                            zd.get("serialNo") == d.get("serialNo")
-                            for zd in zone.get("devices", [])
-                        )
-                    ]
-                    battery_states = [
-                        device_battery.get(d.get("serialNo", ""), "?")
-                        for d in zone.get("devices", [])
-                    ]
-
-                    # Display
-                    st.markdown(f"**{zname}**")
-
-                    m1, m2 = st.columns(2)
-                    m1.metric("Now", f"{temp}°C" if temp != "?" else "?")
-                    if power == "ON" and target_temp != "off":
-                        m2.metric("Target", f"{target_temp}°C")
-                    else:
-                        m2.metric("Target", "Off")
-
-                    # Status chips
-                    status_parts = []
-                    if heating_pct and heating_pct > 0:
-                        status_parts.append(f"🔥 {heating_pct}%")
-                    if humidity != "?":
-                        status_parts.append(f"💧 {humidity}%")
-                    if is_manual:
-                        status_parts.append("✋ Manual")
-                    for bs in battery_states:
-                        if bs == "LOW":
-                            status_parts.append("🪫 Low battery")
-                        elif bs == "NORMAL":
-                            status_parts.append("🔋 OK")
-
-                    if status_parts:
-                        st.caption(" · ".join(status_parts))
-
-
-# ---------------------------------------------------------------------------
-# Global override page
-# ---------------------------------------------------------------------------
-
-
-def render_global_override(tado):
-    st.title("🎛️ Global Override")
-    st.markdown("Control all rooms at once.")
-
-    try:
-        zones = tado.get_zones()
-        home_state = tado.get_home_state()
-    except Exception as e:
-        st.error(f"Failed to fetch zones: {e}")
-        return
+    zones = data["zones"]
+    zone_states = data["zone_states"]
+    weather = data["weather"]
+    home_state = data["home_state"]
+    devices = data["devices"]
 
     heating_zones = [z for z in zones if z.get("type") == "HEATING"]
 
-    # Home / Away toggle
-    st.subheader("Presence")
-    presence = home_state.get("presence", "HOME")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button(
-            "🏠 Home", type="primary" if presence == "HOME" else "secondary"
-        ):
-            tado.set_home_state(True)
-            st.success("Set to Home")
-            time.sleep(0.5)
-            st.rerun()
-    with col2:
-        if st.button(
-            "🚶 Away", type="primary" if presence == "AWAY" else "secondary"
-        ):
-            tado.set_home_state(False)
-            st.success("Set to Away")
-            time.sleep(0.5)
-            st.rerun()
+    # Build per-zone state info
+    room_data = []
+    for zone in sorted(heating_zones, key=lambda z: z["id"]):
+        zid = zone["id"]
+        state = zone_states.get(str(zid), {})
+        sensor = state.get("sensorDataPoints", {})
+        setting = state.get("setting", {})
+        activity = state.get("activityDataPoints", {})
+        overlay = state.get("overlay")
 
-    st.divider()
+        current = sensor.get("insideTemperature", {}).get("celsius")
+        humidity = sensor.get("humidity", {}).get("percentage")
+        power = setting.get("power", "OFF")
+        target_obj = setting.get("temperature", {})
+        target = target_obj.get("celsius") if target_obj else None
+        heating_pct = activity.get("heatingPower", {}).get("percentage", 0)
+        is_manual = overlay is not None
 
-    # Global temperature override
-    st.subheader("Set all rooms")
+        # Battery from devices
+        zone_device_serials = [d.get("serialNo") for d in zone.get("devices", [])]
+        battery_states = []
+        for d in devices:
+            if d.get("serialNo") in zone_device_serials:
+                battery_states.append(d.get("batteryState", "UNKNOWN"))
 
-    override_temp = st.slider(
-        "Temperature (°C)", min_value=5.0, max_value=25.0, value=20.0, step=0.5
-    )
-
-    termination = st.radio(
-        "Duration",
-        ["Until next schedule change", "1 hour", "2 hours", "3 hours", "Manual (until cancelled)"],
-        horizontal=True,
-    )
-
-    term_map = {
-        "Until next schedule change": "NEXT_TIME_BLOCK",
-        "1 hour": 3600,
-        "2 hours": 7200,
-        "3 hours": 10800,
-        "Manual (until cancelled)": "MANUAL",
-    }
-    term_value = term_map[termination]
-
-    col_set, col_resume = st.columns(2)
-
-    with col_set:
-        if st.button("Apply to all rooms", type="primary"):
-            errors = []
-            for zone in heating_zones:
-                try:
-                    tado.set_temperature(
-                        zone["id"], override_temp, termination=term_value
-                    )
-                except Exception as e:
-                    errors.append(f"{zone['name']}: {e}")
-
-            if errors:
-                st.error("Some zones failed:\n" + "\n".join(errors))
-            else:
-                st.success(
-                    f"All {len(heating_zones)} rooms set to {override_temp}°C"
-                )
-
-    with col_resume:
-        if st.button("Resume schedule (all rooms)"):
-            errors = []
-            for zone in heating_zones:
-                try:
-                    tado.end_manual_control(zone["id"])
-                except Exception as e:
-                    errors.append(f"{zone['name']}: {e}")
-
-            if errors:
-                st.error("Some zones failed:\n" + "\n".join(errors))
-            else:
-                st.success("All rooms back on schedule")
-
-    st.divider()
-
-    # Per-room quick overrides
-    st.subheader("Per-room quick controls")
-
-    for zone in heating_zones:
-        with st.expander(zone["name"]):
-            zid = zone["id"]
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1:
-                room_temp = st.slider(
-                    "Temp",
-                    5.0,
-                    25.0,
-                    20.0,
-                    0.5,
-                    key=f"room_temp_{zid}",
-                )
-            with c2:
-                if st.button("Set", key=f"set_{zid}"):
-                    try:
-                        tado.set_temperature(zid, room_temp, termination=term_value)
-                        st.success(f"{zone['name']} → {room_temp}°C")
-                    except Exception as e:
-                        st.error(str(e))
-            with c3:
-                if st.button("Resume", key=f"resume_{zid}"):
-                    try:
-                        tado.end_manual_control(zid)
-                        st.success(f"{zone['name']} back on schedule")
-                    except Exception as e:
-                        st.error(str(e))
-
-
-# ---------------------------------------------------------------------------
-# Seasonal profiles page
-# ---------------------------------------------------------------------------
-
-
-def render_profiles(tado):
-    st.title("📅 Seasonal Profiles")
-    st.markdown(
-        "Save your current schedule as a named profile (e.g. 'Winter', 'Summer'). "
-        "Switch between them with one click instead of editing room by room."
-    )
-
-    profiles = load_profiles()
-
-    # Save current schedule as profile
-    st.subheader("Save current schedule")
-    new_name = st.text_input(
-        "Profile name",
-        placeholder="e.g. Winter, Autumn, Holiday",
-    )
-
-    if st.button("Save current schedule as profile", type="primary"):
-        if not new_name.strip():
-            st.warning("Enter a profile name.")
+        # Status text
+        if power == "OFF" or target is None:
+            status_text = "Off"
+        elif heating_pct and heating_pct > 0:
+            status_text = f"Heating · {heating_pct}%"
+        elif is_manual:
+            status_text = "Manual"
         else:
-            with st.spinner("Reading schedules from all zones..."):
-                profile_data = export_current_schedules(tado)
-            save_profile(new_name.strip(), profile_data)
-            st.success(f"Saved '{new_name.strip()}'")
-            time.sleep(0.5)
-            st.rerun()
+            status_text = "Idle"
 
-    st.divider()
+        room_data.append({
+            "id": zid,
+            "name": zone["name"],
+            "icon": get_room_icon(zone["name"]),
+            "current": current,
+            "target": target,
+            "power": power,
+            "humidity": humidity,
+            "heating_pct": heating_pct or 0,
+            "status": status_text,
+            "is_manual": is_manual,
+            "battery_low": "LOW" in battery_states,
+        })
 
-    # Existing profiles
-    st.subheader("Saved profiles")
+    # --- Navigation tabs ---
+    tab_home, tab_profiles, tab_devices = st.tabs(["🌡 Home", "📅 Profiles", "🔧 Devices"])
 
-    if not profiles:
-        st.info("No profiles saved yet. Set up your schedule in the Tado app, then save it here.")
-        return
+    # ==================================================================
+    # HOME TAB
+    # ==================================================================
+    with tab_home:
+        # Header row
+        presence = home_state.get("presence", "UNKNOWN")
+        outside = weather.get("outsideTemperature", {}).get("celsius", "?")
 
-    for pname, pdata in profiles.items():
-        with st.expander(f"📋 {pname}"):
-            exported = pdata.get("exported_at", "?")
-            zones_data = pdata.get("zones", {})
-            zone_count = len(zones_data)
-            zones_with_data = sum(
-                1 for z in zones_data.values() if "blocks" in z
+        st.markdown(
+            f'<div class="stat-row">'
+            f'<div class="stat-card"><div class="stat-value">{presence.title()}</div>'
+            f'<div class="stat-label">Presence</div></div>'
+            f'<div class="stat-card"><div class="stat-value">{outside}°</div>'
+            f'<div class="stat-label">Outside</div></div>'
+            f'<div class="stat-card"><div class="stat-value">{len(room_data)}</div>'
+            f'<div class="stat-label">Zones</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # --- GLOBAL CONTROL ---
+        st.markdown('<div class="section-label">Global control</div>', unsafe_allow_html=True)
+
+        # Init session state for global temp
+        if "global_target" not in st.session_state:
+            # Default to median of current targets
+            active_targets = [r["target"] for r in room_data if r["target"] is not None]
+            st.session_state.global_target = (
+                round(sum(active_targets) / len(active_targets) * 2) / 2
+                if active_targets else 20.0
             )
 
-            st.caption(f"Saved: {exported} · {zones_with_data}/{zone_count} zones with schedule data")
+        # Temperature display + controls
+        gt = st.session_state.global_target
+        st.markdown(
+            f'<div class="global-display">'
+            f'<div class="global-temp">{gt:.1f}<span class="unit">°C</span></div>'
+            f'<div class="global-label">Target for all rooms</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-            # Show summary of temperatures per zone
-            for zid, zinfo in zones_data.items():
-                zname = zinfo.get("name", f"Zone {zid}")
-                blocks = zinfo.get("blocks", [])
-                if blocks:
-                    temps = set()
-                    for block in blocks:
-                        t = block.get("setting", {}).get("temperature", {})
-                        if t:
-                            temps.add(t.get("celsius", "?"))
-                    temp_str = ", ".join(f"{t}°C" for t in sorted(temps) if t != "?")
-                    st.caption(f"  {zname}: {temp_str if temp_str else 'off'}")
+        c_down, c_slider, c_up = st.columns([1, 4, 1])
+        with c_down:
+            if st.button("−", key="temp_down", use_container_width=True):
+                st.session_state.global_target = max(5.0, gt - 0.5)
+                st.rerun()
+        with c_slider:
+            new_temp = st.slider(
+                "Global target",
+                5.0, 25.0, gt, 0.5,
+                label_visibility="collapsed",
+            )
+            if new_temp != gt:
+                st.session_state.global_target = new_temp
+                st.rerun()
+        with c_up:
+            if st.button("+", key="temp_up", use_container_width=True):
+                st.session_state.global_target = min(25.0, gt + 0.5)
+                st.rerun()
 
-            col_apply, col_delete = st.columns(2)
-            with col_apply:
-                if st.button(f"Apply '{pname}'", key=f"apply_{pname}", type="primary"):
-                    with st.spinner(f"Applying '{pname}' to all zones..."):
-                        results = apply_profile(tado, pdata)
+        # Duration selector
+        duration = st.radio(
+            "Duration",
+            ["Until next block", "1 hour", "2 hours", "Manual"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        term_map = {
+            "Until next block": "NEXT_TIME_BLOCK",
+            "1 hour": 3600,
+            "2 hours": 7200,
+            "Manual": "MANUAL",
+        }
 
-                    for zname, success, msg in results:
-                        if success:
-                            st.success(f"{zname}: applied")
-                        else:
-                            st.error(f"{zname}: {msg}")
-
-            with col_delete:
-                if st.button(f"Delete '{pname}'", key=f"delete_{pname}"):
-                    delete_profile(pname)
+        c_apply, c_resume = st.columns(2)
+        with c_apply:
+            if st.button("🔥 Apply to all rooms", type="primary", use_container_width=True):
+                errors = []
+                for room in room_data:
+                    try:
+                        tado.set_temperature(
+                            room["id"],
+                            st.session_state.global_target,
+                            termination=term_map[duration],
+                        )
+                    except Exception as e:
+                        errors.append(f"{room['name']}: {e}")
+                if errors:
+                    st.error("\n".join(errors))
+                else:
+                    st.success(f"All {len(room_data)} rooms → {st.session_state.global_target}°C")
+                    time.sleep(1)
                     st.rerun()
 
+        with c_resume:
+            if st.button("⏹ Resume all schedules", use_container_width=True):
+                errors = []
+                for room in room_data:
+                    try:
+                        tado.end_manual_control(room["id"])
+                    except Exception as e:
+                        errors.append(f"{room['name']}: {e}")
+                if errors:
+                    st.error("\n".join(errors))
+                else:
+                    st.success("All rooms back on schedule")
+                    time.sleep(1)
+                    st.rerun()
 
-# ---------------------------------------------------------------------------
-# Devices & offsets page
-# ---------------------------------------------------------------------------
+        # --- ROOM CARDS ---
+        st.markdown('<div class="section-label">Rooms</div>', unsafe_allow_html=True)
 
+        # Render room cards as HTML for the display, Streamlit buttons for actions
+        for room in room_data:
+            is_heating = room["heating_pct"] > 0
+            is_off = room["power"] == "OFF" or room["target"] is None
+            card_class = "heating" if is_heating else ("off" if is_off else "")
 
-def render_devices(tado):
-    st.title("🔧 Devices & Offsets")
+            battery_badge = ' <span class="battery-low">LOW BATTERY</span>' if room["battery_low"] else ""
 
-    try:
-        zones = tado.get_zones()
-        devices = tado.get_devices()
-    except Exception as e:
-        st.error(f"Failed to fetch devices: {e}")
-        return
+            target_display = f"{room['target']}°" if room["target"] else "Off"
+            current_display = f"{room['current']:.1f}°" if room["current"] else "?"
+            humidity_display = f" · 💧{room['humidity']}%" if room.get("humidity") else ""
 
-    # Build zone-to-device mapping
-    zone_device_map = {}
-    for zone in zones:
-        for zd in zone.get("devices", []):
-            zone_device_map[zd.get("serialNo")] = zone["name"]
+            st.markdown(
+                f'<div class="room-card {card_class}">'
+                f'  <div class="room-left">'
+                f'    <div class="room-icon">{room["icon"]}</div>'
+                f'    <div>'
+                f'      <div class="room-name">{room["name"]}{battery_badge}</div>'
+                f'      <div class="room-status">{room["status"]}{humidity_display}</div>'
+                f'    </div>'
+                f'  </div>'
+                f'  <div class="room-right">'
+                f'    <div class="room-temp">{current_display}</div>'
+                f'    <div class="room-target">Target {target_display}</div>'
+                f'  </div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    st.subheader("Device status")
+            # Per-room quick controls in an expander
+            with st.expander(f"Control {room['name']}", expanded=False):
+                rc1, rc2, rc3 = st.columns([3, 1, 1])
+                with rc1:
+                    room_temp = st.slider(
+                        "Temp",
+                        5.0, 25.0,
+                        float(room["target"]) if room["target"] else 20.0,
+                        0.5,
+                        key=f"rt_{room['id']}",
+                        label_visibility="collapsed",
+                    )
+                with rc2:
+                    if st.button("Set", key=f"set_{room['id']}", use_container_width=True):
+                        try:
+                            tado.set_temperature(room["id"], room_temp, termination=term_map[duration])
+                            st.success(f"→ {room_temp}°C")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+                with rc3:
+                    if is_off:
+                        if st.button("On", key=f"on_{room['id']}", use_container_width=True):
+                            try:
+                                tado.end_manual_control(room["id"])
+                                st.success("Resumed schedule")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(str(e))
+                    else:
+                        if st.button("Off", key=f"off_{room['id']}", use_container_width=True):
+                            try:
+                                tado.set_temperature(room["id"], 5.0, termination="MANUAL")
+                                st.success("Turned off")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(str(e))
 
-    for device in devices:
-        serial = device.get("serialNo", "?")
-        dev_type = device.get("deviceType", "?")
-        battery = device.get("batteryState", "N/A")
-        fw = device.get("currentFwVersion", "?")
-        connection = device.get("connectionState", {}).get("value", "?")
-        zone_name = zone_device_map.get(serial, "Unassigned")
+    # ==================================================================
+    # PROFILES TAB
+    # ==================================================================
+    with tab_profiles:
+        st.markdown('<div class="section-label">Save current schedule</div>', unsafe_allow_html=True)
 
-        with st.container(border=True):
-            c1, c2, c3, c4 = st.columns(4)
-            c1.markdown(f"**{zone_name}**")
-            c2.caption(f"{dev_type}")
-
-            if battery == "LOW":
-                c3.warning("🪫 Low battery")
-            elif battery == "NORMAL":
-                c3.success("🔋 OK")
+        new_name = st.text_input("Profile name", placeholder="e.g. Winter, Summer, Holiday")
+        if st.button("Save current schedule as profile", type="primary", use_container_width=True):
+            if not new_name.strip():
+                st.warning("Enter a name.")
             else:
-                c3.caption(f"Battery: {battery}")
+                with st.spinner("Reading schedules..."):
+                    profile_data = export_current_schedules(tado)
+                save_profile(new_name.strip(), profile_data)
+                st.success(f"Saved '{new_name.strip()}'")
+                time.sleep(0.5)
+                st.rerun()
 
-            if connection == "true" or connection is True:
-                c4.success("Connected")
-            else:
-                c4.error("Offline")
+        profiles = load_profiles()
+        if profiles:
+            st.markdown('<div class="section-label">Saved profiles</div>', unsafe_allow_html=True)
+            for pname, pdata in profiles.items():
+                zones_data = pdata.get("zones", {})
+                zone_count = len(zones_data)
+                zones_ok = sum(1 for z in zones_data.values() if "blocks" in z)
+                exported = pdata.get("exported_at", "?")[:10]
 
-            # Temperature offset
-            if "SRT" in dev_type or "RU" in dev_type or "VA" in dev_type:
+                st.markdown(
+                    f'<div class="profile-card">'
+                    f'<div class="profile-name">📋 {pname}</div>'
+                    f'<div class="profile-meta">Saved {exported} · {zones_ok}/{zone_count} zones</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+                c_a, c_d = st.columns(2)
+                with c_a:
+                    if st.button(f"Apply '{pname}'", key=f"apply_{pname}", type="primary", use_container_width=True):
+                        with st.spinner(f"Applying '{pname}'..."):
+                            results = apply_profile(tado, pdata)
+                        for zname, success, msg in results:
+                            if success:
+                                st.success(f"{zname} ✓")
+                            else:
+                                st.error(f"{zname}: {msg}")
+                with c_d:
+                    if st.button(f"Delete", key=f"del_{pname}", use_container_width=True):
+                        delete_profile(pname)
+                        st.rerun()
+        else:
+            st.info("No profiles yet. Set up your schedule in the Tado app, then save it here.")
+
+    # ==================================================================
+    # DEVICES TAB
+    # ==================================================================
+    with tab_devices:
+        st.markdown('<div class="section-label">Devices</div>', unsafe_allow_html=True)
+
+        zone_device_map = {}
+        for zone in zones:
+            for zd in zone.get("devices", []):
+                zone_device_map[zd.get("serialNo")] = zone["name"]
+
+        for device in devices:
+            serial = device.get("serialNo", "?")
+            dev_type = device.get("deviceType", "?")
+            battery = device.get("batteryState", "N/A")
+            connection = device.get("connectionState", {}).get("value", False)
+            zone_name = zone_device_map.get(serial, "Unassigned")
+
+            conn_icon = "🟢" if connection else "🔴"
+            batt_text = "🪫 LOW" if battery == "LOW" else ("🔋" if battery == "NORMAL" else battery)
+
+            st.markdown(
+                f'<div class="room-card">'
+                f'  <div class="room-left">'
+                f'    <div class="room-icon">{conn_icon}</div>'
+                f'    <div>'
+                f'      <div class="room-name">{zone_name}</div>'
+                f'      <div class="room-status">{dev_type} · {batt_text}</div>'
+                f'    </div>'
+                f'  </div>'
+                f'  <div class="room-right">'
+                f'    <div class="room-target">{serial}</div>'
+                f'  </div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Offset controls for radiator valves
+            if any(t in dev_type for t in ["SRT", "RU", "VA"]):
                 try:
                     offset_data = tado.get_temperature_offset(serial)
                     current_offset = offset_data.get("celsius", 0)
@@ -628,80 +810,52 @@ def render_devices(tado):
                     current_offset = 0
 
                 new_offset = st.slider(
-                    f"Temperature offset for {zone_name} ({serial})",
-                    min_value=-5.0,
-                    max_value=5.0,
-                    value=float(current_offset),
-                    step=0.1,
-                    key=f"offset_{serial}",
-                    help="Positive = device reads warmer than reality. "
-                    "Set negative to compensate for radiator heat.",
+                    f"Offset ({zone_name})",
+                    -5.0, 5.0, float(current_offset), 0.1,
+                    key=f"off_{serial}",
                 )
-
-                if st.button(f"Update offset", key=f"set_offset_{serial}"):
+                if st.button(f"Update offset", key=f"setoff_{serial}"):
                     try:
                         tado.set_temperature_offset(serial, new_offset)
-                        st.success(
-                            f"Offset for {zone_name} set to {new_offset}°C"
-                        )
+                        st.success(f"{zone_name} offset → {new_offset}°C")
                     except Exception as e:
-                        st.error(f"Failed: {e}")
+                        st.error(str(e))
 
 
 # ---------------------------------------------------------------------------
-# Sidebar navigation & settings
+# Sidebar – connection info
 # ---------------------------------------------------------------------------
 
 tado = _get_tado_client()
 
+if tado is not None:
+    with st.sidebar:
+        st.markdown("**Connection**")
+        try:
+            me = tado.get_me()
+            st.caption(f"Logged in as {me.get('name', '?')}")
+        except Exception:
+            st.caption("Connected")
+
+        if hasattr(tado, "refresh_token") and tado.refresh_token:
+            st.text_input(
+                "Refresh token (save for next time)",
+                value=tado.refresh_token,
+                type="password",
+                key="show_token",
+            )
+
+        if st.button("Disconnect"):
+            st.session_state.tado = None
+            if TOKEN_FILE.exists():
+                TOKEN_FILE.unlink()
+            st.rerun()
+
+# ---------------------------------------------------------------------------
+# Main render
+# ---------------------------------------------------------------------------
+
 if tado is None:
     render_auth_page()
 else:
-    # Sidebar
-    with st.sidebar:
-        st.title("Tado Control")
-
-        page = st.radio(
-            "Navigate",
-            ["Dashboard", "Global Override", "Seasonal Profiles", "Devices & Offsets"],
-            label_visibility="collapsed",
-        )
-
-        st.divider()
-
-        # Show refresh token for user to copy (useful for Streamlit Cloud secrets)
-        with st.expander("Connection"):
-            try:
-                me = tado.get_me()
-                name = me.get("name", "?")
-                email = me.get("email", "?")
-                st.caption(f"Logged in as **{name}** ({email})")
-            except Exception:
-                st.caption("Connected")
-
-            if hasattr(tado, "refresh_token") and tado.refresh_token:
-                st.text_input(
-                    "Refresh token (save this for next time)",
-                    value=tado.refresh_token,
-                    type="password",
-                    key="show_refresh_token",
-                )
-
-            if st.button("Disconnect"):
-                st.session_state.tado = None
-                if TOKEN_FILE.exists():
-                    TOKEN_FILE.unlink()
-                st.rerun()
-
-        st.divider()
-        st.caption("Auto-refreshes when you interact. Pull down to refresh on mobile.")
-
-    # Render selected page
-    if page == "Dashboard":
-        render_dashboard(tado)
-    elif page == "Global Override":
-        render_global_override(tado)
-    elif page == "Seasonal Profiles":
-        render_profiles(tado)
-    elif page == "Devices & Offsets":
-        render_devices(tado)
+    render_main(tado)
