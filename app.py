@@ -172,11 +172,17 @@ def render_auth_page():
                 t = Tado()
                 st.session_state.auth_tado = t
                 st.session_state.auth_url = t.get_device_verification_url()
+                st.session_state.auth_user_code = getattr(t, "user_code", None)
                 st.session_state.auth_flow_started = True
                 st.rerun()
         else:
             url = st.session_state.get("auth_url", "")
-            st.info(f"Open this URL in your browser and log in:\n\n**{url}**")
+            user_code = st.session_state.get("auth_user_code", "")
+
+            st.info(f"**1.** Open this URL in your browser:\n\n{url}")
+            if user_code:
+                st.success(f"**2.** Enter this code when prompted: **{user_code}**")
+            st.markdown("**3.** Log in with your Tado credentials, then click the button below.")
 
             if st.button("I've logged in, check now"):
                 t = st.session_state.auth_tado
